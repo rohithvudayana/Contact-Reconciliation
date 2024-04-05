@@ -1,16 +1,20 @@
 import express from "express";
-import dotenv from "dotenv"
+import dotenv from "dotenv";
+import {errorHandler} from "./middleware/errorHandler";
+import { routeNotFound } from "./middleware/routeNotFound";
 import { Request, Response } from "express";
-import { error } from "console";
+import { httpResponse } from "./helpers/createResponse";
 
 dotenv.config();
 const app = express();
+app.use(express.json());
+
+app.get("/", (_req: Request, _res: Response) => {
+    _res.status(200).send(httpResponse(true, "OK", []));
+})
 
 const PORT = process.env.PORT || 8999;
 try{
-    // if(!process.env.DB_URL)
-    // throw new Error("No DB_URL found in .env file");
-
     app.listen(PORT, () => {
         console.log(`Server listening on : http://localhost:${PORT}/`);
     })
@@ -18,4 +22,5 @@ try{
     console.error(error);
 }
 
-app.use(express.json());
+app.use(routeNotFound);
+app.use(errorHandler);

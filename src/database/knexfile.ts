@@ -10,7 +10,7 @@ interface KnexConfig {
     [key: string] : Knex.Config;
 }
 
-export const configs: KnexConfig = {
+const configs: KnexConfig = {
     development: {
         client : "pg",
         connection: process.env.DB_URL,
@@ -53,3 +53,5 @@ export const configs: KnexConfig = {
         seeds: { directory: "./seeds" },
     },
 }
+
+export default configs;
