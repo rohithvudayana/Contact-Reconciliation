@@ -38,5 +38,19 @@ const findLinkedContact = async (email: string, phoneNumber: number) => {
     }
     else{
         console.log("length > 1");
+        let emailObj = {};
+        let phoneObj = {};
+
+        if(matchedContacts[0].email == email){
+            emailObj = matchedContacts[0];
+            phoneObj = matchedContacts[1];
+        }
+        else{
+            emailObj = matchedContacts[1];
+            phoneObj = matchedContacts[0];
+        }
+        (phoneObj as any).link_precedence = "secondary";
+        (phoneObj as any).linked_id = (emailObj as any).id;
+        
     }
 }
