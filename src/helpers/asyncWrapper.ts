@@ -9,19 +9,16 @@ type Callback = (
   _next: NextFunction
 ) => Promise<void>;
 
-// Generate a wrapper function that executes the callback function
-// safely and handles any errors that may occur
-
 const asyncWrapper = (callback: Callback): Callback =>
     async (_req: Request, _res: Response, _next: NextFunction): Promise<void> => {
-        try{
+        try {
             await callback(_req, _res, _next);
-        }catch (error: any) {
-            console.error(error.message);
+        } catch (error: any) {
+            console.error(error?.message || "Unknown error occurred");
             if (error instanceof mongoose.Error.CastError) {
                 _next(CustomError.BadRequestError("Invalid user id"));
             }
-            _next(CustomError.InternalServerError(`Something went wrong ${error.message}`));
+            _next(CustomError.InternalServerError(`Something went wrong ${error?.message || ''}`));
         }
     };
 

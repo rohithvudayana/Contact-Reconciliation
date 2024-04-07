@@ -15,8 +15,8 @@ const configs: KnexConfig = {
         client : "pg",
         connection: process.env.DB_URL,
         pool: {
-            min: 0,
-            max: 7,
+            min: 3,
+            max: 30,
             acquireTimeoutMillis: 300000,
             createTimeoutMillis: 300000,
             destroyTimeoutMillis: 50000,

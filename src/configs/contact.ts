@@ -1,6 +1,7 @@
 import db from "../database/db";
 
 interface Contact{
+    id?:number;
     phone_number?: string;
     email?: string;
     linked_id?: number | null;
@@ -11,13 +12,22 @@ interface Contact{
 }
 export default Contact;
 
-async function createContact(data) {
+interface data{
+    email?: string,
+    phoneNumber?: number,
+    link_precedence?: string,
+    linked_id?: number,
+    id?: number
+}
+
+
+async function createContact(data : data) {
     const res = await db("Contact").insert(data, "*");
     console.log(res);
     return res;
 }
 
-async function updateContact(data){
+async function updateContact(data : data) {
     const query = db("Contact")
         .where("id", data.id)
         .update({

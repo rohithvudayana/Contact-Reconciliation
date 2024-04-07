@@ -8,6 +8,6 @@ export const errorHandler = (
   _res: Response,
   _next: NextFunction 
 ) => {
-  console.error(`Error ${err.statusCode}: ${err.message}`);
-  return _res.status(err.statusCode).json(httpResponse(false, err.message, {}));
+  console.error(`Error ${err.statuscode}: ${err.message}`);
+  return _res.status(err.statuscode).json(httpResponse(false, err.message, {}));
 };
