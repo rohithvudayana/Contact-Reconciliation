@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "es6",
+    "module": "commonjs",
+    "rootDir": "./src",
+    // add custom type extensions
+    "typeRoots": ["./src/types", "./node_modules/@types"],
+    "noEmitOnError": false,
+    "removeComments": true,
+    "noImplicitAny": false,
+    "allowJs": true,
+    "forceConsistentCasingInFileNames": true,
+    "outDir": "./build",
+    "strictNullChecks": true,
+    "esModuleInterop": true,
+    "strict": true
+  }
+}

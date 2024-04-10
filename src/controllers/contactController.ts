@@ -3,37 +3,41 @@ import * as CustomError from "../errors";
 import asyncWrapper from "../helpers/asyncWrapper";
 import { StatusCodes } from "http-status-codes";
 import { httpResponse } from "../helpers";
-import Contact, { createContact, updateContact } from "../configs/contact";
-import db from "../database/db";
+import Contact, { createContact,  updateContact } from "../configs/contact";
+import { LinkPrecedence, PrismaClient} from '@prisma/client';
 
+export const prisma = new PrismaClient();
 
-const findLinkedContact = async (email: string, phoneNumber: number) => {
+const findLinkedContact = async (email: string, phoneNumber: string) => {
     try {
-        let matchedContacts = await db("Contact").select("*")
-                                                .where("email", email)
-                                                .orWhere("phone_number", phoneNumber);
+        const matchedContacts = await prisma.contact.findMany({
+            where: { OR: [ { email: email }, { phonenumber: phoneNumber } ]}
+          });
         if(matchedContacts.length == 0){
             console.log("length = 0");
             const newContact = {
                 email: email,
-                phone_number: phoneNumber,
-                link_precedence: "primary"
-            }
-            const newConCreated = await createContact(newContact);
-            console.log((newConCreated[0]).id);
-            return (newConCreated[0]).id;
+                phonenumber: phoneNumber,
+                linkprecedence: LinkPrecedence.PRIMARY
+            };
+            const newConCreated = await prisma.contact.create({data : newContact});
+
+            console.log(newConCreated.id);
+            return newConCreated.id;
         }
         else if(matchedContacts.length == 1){
             console.log("length = 1");
-            if(email && phoneNumber && (matchedContacts[0].email != email || matchedContacts[0].phone_number != phoneNumber)){
+            if(email && phoneNumber && (matchedContacts[0].email != email || matchedContacts[0].phonenumber != phoneNumber)){
                 const newContact = {
                     email: email,
-                    phone_number: phoneNumber,
-                    link_precedence: "secondary",
-                    linked_id: matchedContacts[0].id
+                    phonenumber: phoneNumber,
+                    linkprecedence: LinkPrecedence.SECONDARY,
+                    linkedid: matchedContacts[0].id
                 }
-                const newConCreated = await createContact(newContact);
-                return (newConCreated[0]).id;
+                const newConCreated = await prisma.contact.create({data : newContact});
+                console.log(newConCreated);
+                console.log(newConCreated.id);
+                return newConCreated.id;
             }
             return matchedContacts[0].id;
         }
@@ -50,12 +54,15 @@ const findLinkedContact = async (email: string, phoneNumber: number) => {
                 emailObj = matchedContacts[1];
                 phoneObj = matchedContacts[0];
             }
-            (phoneObj).link_precedence = "secondary";
-            (phoneObj).linked_id = (emailObj).id;
+            (phoneObj).linkprecedence = "SECONDARY";
+            (phoneObj).linkedid = (emailObj).id;
             if(email && phoneNumber){
                 const UpdateCon = await updateContact(phoneObj as any);
-                return (UpdateCon[0]).id;
-            }else{
+                console.log(UpdateCon);
+                console.log(UpdateCon.id);
+                return UpdateCon.id;
+            }
+            else{
                 return matchedContacts.slice(-1)[0].id;
             }
         }
@@ -64,49 +71,68 @@ const findLinkedContact = async (email: string, phoneNumber: number) => {
     }
 }
 
+interface RootRecursiveResult {
+    id: number;
+    email: string;
+    phoneNumber: string;
+    linkPrecedence: string;
+    linkedId: number;
+  }
 
-const root_recursive = async (id : number) => {
-    const query = `with recursive findRoot as
-                   (select id, email, phone_number, link_precedence, linked_id
-                    from "Contact"
-                    where id = ?
+  const rootRecursive = async (id: number): Promise<RootRecursiveResult[]> => {
+    console.log("ROOT");
+    const result = await prisma.$queryRaw<RootRecursiveResult[]>`
+      with recursive findRoot as (
+        select id, email,phonenumber,linkprecedence,linked_id
+        from "Contact"
+        where id = ${id}
 
-                    union all
+        union all
 
-                    select c.id, c.email, c.phone_number, c.link_precedence, c.linked_id
-                    from "Contact" c
-                    join findRoot r on c.id = r.linked_id
-                   )
-                   select * from findRoot
-                   where link_precedence = 'primary';
-                   `;
-    const db_query = await db.raw(query, [id]);
-    return db_query.rows[0].id;
-}
+        select c.id, c.email, c.phonenumber, c.linkprecedence, c.linked_id
+        from "Contact" c
+        join findRoot r on c.id = r.linked_id
+      )
+      select * from findRoot
+      where linkPrecedence = 'PRIMARY';
+    `;
 
-const child_recursive = async (id : number) => {
-    const query = `with recursive findChild as
-                   (select id, email, phone_number, linked_id, linked_precedence
-                    from "Contact"
-                    where id = ?
+    return result;
+  }
 
-                    union all
+interface ChildRecursiveResult {
+    emails: string[];
+    phoneNumbers: string[];
+    primaryContactId: number | null;
+    secondaryContactIds: (number | null)[];
+  }
 
-                    select c.id, c.email, c.phone_number, c.linked_id, c.link_precedence
-                    from "Contact" c
-                    inner join findChild fc on c.linked_id = fc.id;
-                   )
-                   select
-                        array_remove(array_agg(distinct email), null) as emails,
-                        array_remove(array_agg(distinct phone_number), null) as phoneNumbers,
-                        max(case when link_precedence = "primary" then id end) as primaryContactID,
-                        array_remove(array_agg(case when link_precedence = "secondary" then id end), null) as secondaryContactIDs
-                    from findChild;;
-                   `;
-    const db_query = db.raw(query, [id]);
-    const res = await db_query;
-    return res.rows[0];
-}
+  const childRecursive = async (id: number): Promise<ChildRecursiveResult> => {
+    console.log("CHILD");
+        const result = await prisma.$queryRaw<ChildRecursiveResult[]>`
+        WITH RECURSIVE ChildHierarchy AS (
+        SELECT id, email, phonenumber, linked_id, linkprecedence
+        FROM "Contact"
+        WHERE id = ${id}
+
+        UNION ALL
+
+        SELECT c.id, c.email, c.phonenumber, c.linked_id, c.linkprecedence
+        FROM "Contact" c
+        INNER JOIN ChildHierarchy ch ON c.linked_id = ch.id
+        )
+        SELECT
+        array_remove(array_agg(DISTINCT email), null) AS emails,
+        array_remove(array_agg(DISTINCT phonenumber), null) AS phoneNumbers,
+        MAX(CASE WHEN linkprecedence = 'PRIMARY' THEN id END) AS primaryContactId,
+        array_remove(array_agg(CASE WHEN linkprecedence = 'SECONDARY' THEN id END), null) AS secondaryContactIds
+        FROM ChildHierarchy;
+    `;
+
+    return result[0];
+  };
+
+
 
 export const contactCreation = asyncWrapper(
     async(_req: Request, _res: Response, _next: NextFunction) => {
@@ -115,10 +141,14 @@ export const contactCreation = asyncWrapper(
             if(!email || !phoneNumber){
                 throw _next(CustomError.BadRequestError("Enter email and phoneNumber both"));
             }
-
             const contactId = await findLinkedContact(email, phoneNumber);
-            const rootId = await root_recursive(contactId);
-            const contact = await child_recursive(rootId);
+            // console.log(contactId);
+            const root = await rootRecursive(contactId);
+            // console.log(root);
+            const rootId = root[0].id;
+            // console.log(rootId);
+            const contact = await childRecursive(rootId);
+            console.log({contact});
 
             _res.status(StatusCodes.OK).json(httpResponse(true, "Identified Contacts", {contact}));
         }
