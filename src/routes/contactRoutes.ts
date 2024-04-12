@@ -3,4 +3,4 @@ import { contactCreation } from "../controllers/contactController";
 
 export const contactRouter = express.Router();
 
-contactRouter.route("/identify").post(contactCreation);
+contactRouter.route("/contact").post(contactCreation);
