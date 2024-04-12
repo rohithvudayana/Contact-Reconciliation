@@ -3,16 +3,18 @@ import * as CustomError from "../errors";
 import asyncWrapper from "../helpers/asyncWrapper";
 import { StatusCodes } from "http-status-codes";
 import { httpResponse } from "../helpers";
-import Contact, { createContact,  updateContact } from "../configs/contact";
+import Contact from "../configs/contact";
+import { childRecursive, getSecondaryContacts, rootRecursive } from "../configs/queries";
 import { LinkPrecedence, PrismaClient} from '@prisma/client';
 
 export const prisma = new PrismaClient();
 
-const findLinkedContact = async (email: string, phoneNumber: string) => {
+const findLinkedContact =  async (email: string, phoneNumber: string) => {
     try {
         const matchedContacts = await prisma.contact.findMany({
             where: { OR: [ { email: email }, { phonenumber: phoneNumber } ]}
-          });
+        });
+
         if(matchedContacts.length == 0){
             console.log("length = 0");
             const newContact = {
@@ -21,139 +23,85 @@ const findLinkedContact = async (email: string, phoneNumber: string) => {
                 linkprecedence: LinkPrecedence.PRIMARY
             };
             const newConCreated = await prisma.contact.create({data : newContact});
-
-            console.log(newConCreated.id);
-            return newConCreated.id;
+            console.log("Newly created contact : ", newConCreated);
+            return {id : newConCreated.id, linkedid : newConCreated.linkedid};
         }
-        else if(matchedContacts.length == 1){
-            console.log("length = 1");
-            if(email && phoneNumber && (matchedContacts[0].email != email || matchedContacts[0].phonenumber != phoneNumber)){
+        else{
+            let oldestMatchedContact: Contact | null = null;
+
+            const matchedByEmailPrimary = await prisma.contact.findMany({
+                where: { AND : [ { email: email }, { linkprecedence: LinkPrecedence.PRIMARY} ]}
+            });
+            const matchedByPhoneNumberPrimary = await prisma.contact.findMany({
+                where: { AND : [ { phonenumber: phoneNumber }, { linkprecedence: LinkPrecedence.PRIMARY} ]}
+            });
+            const totalContacts = [...matchedByEmailPrimary, ...matchedByPhoneNumberPrimary];
+            const newestContact = totalContacts.slice().sort((a, b) => new Date(b.createdat).getTime() - new Date(a.createdat).getTime())[0];
+            const oldestContact = totalContacts.slice().sort((a, b) => new Date(a.createdat).getTime() - new Date(b.createdat).getTime())[0];
+
+            if( matchedByEmailPrimary.length >= 1 && matchedByPhoneNumberPrimary.length >= 1 ){
+                console.log("both 1");
+                const updateData = { data: {
+                                        linkprecedence: LinkPrecedence.SECONDARY,
+                                        linkedid: oldestContact.id
+                                    },
+                                        where: { id : newestContact.id}
+                                    }
+
+                const updateContact = await prisma.contact.update(updateData);
+                console.log("Updated Contact :", updateContact);
+                return { id: updateContact.id, linkedid: updateContact.linkedid };
+
+            }else{
+                oldestMatchedContact = await prisma.contact.findFirst({
+                    where: { OR: [ { email: email }, { phonenumber: phoneNumber } ] },
+                    orderBy: { createdat: 'asc'}
+                });
+
+                if(!oldestMatchedContact) throw new Error(" No Oldest Matched contact found in database");
+
                 const newContact = {
                     email: email,
                     phonenumber: phoneNumber,
                     linkprecedence: LinkPrecedence.SECONDARY,
-                    linkedid: matchedContacts[0].id
+                    linkedid: oldestMatchedContact.id
                 }
                 const newConCreated = await prisma.contact.create({data : newContact});
-                console.log(newConCreated);
-                console.log(newConCreated.id);
-                return newConCreated.id;
-            }
-            return matchedContacts[0].id;
-        }
-        else{
-            console.log("length > 1");
-            let emailObj: Contact;
-            let phoneObj: Contact;
-
-            if(matchedContacts[0].email == email){
-                emailObj = matchedContacts[0];
-                phoneObj = matchedContacts[1];
-            }
-            else{
-                emailObj = matchedContacts[1];
-                phoneObj = matchedContacts[0];
-            }
-            (phoneObj).linkprecedence = "SECONDARY";
-            (phoneObj).linkedid = (emailObj).id;
-            if(email && phoneNumber){
-                const UpdateCon = await updateContact(phoneObj as any);
-                console.log(UpdateCon);
-                console.log(UpdateCon.id);
-                return UpdateCon.id;
-            }
-            else{
-                return matchedContacts.slice(-1)[0].id;
+                console.log("Newly created contact : ", newConCreated);
+                return {id : newConCreated.id, linkedid: newConCreated.linkedid};
             }
         }
-    }catch(error){
+    }
+    catch(error){
         throw  CustomError.InternalServerError("Problem occurred while finding contact");
     }
 }
-
-interface RootRecursiveResult {
-    id: number;
-    email: string;
-    phoneNumber: string;
-    linkPrecedence: string;
-    linkedId: number;
-  }
-
-  const rootRecursive = async (id: number): Promise<RootRecursiveResult[]> => {
-    console.log("ROOT");
-    const result = await prisma.$queryRaw<RootRecursiveResult[]>`
-      with recursive findRoot as (
-        select id, email,phonenumber,linkprecedence,linked_id
-        from "Contact"
-        where id = ${id}
-
-        union all
-
-        select c.id, c.email, c.phonenumber, c.linkprecedence, c.linked_id
-        from "Contact" c
-        join findRoot r on c.id = r.linked_id
-      )
-      select * from findRoot
-      where linkPrecedence = 'PRIMARY';
-    `;
-
-    return result;
-  }
-
-interface ChildRecursiveResult {
-    emails: string[];
-    phoneNumbers: string[];
-    primaryContactId: number | null;
-    secondaryContactIds: (number | null)[];
-  }
-
-  const childRecursive = async (id: number): Promise<ChildRecursiveResult> => {
-    console.log("CHILD");
-        const result = await prisma.$queryRaw<ChildRecursiveResult[]>`
-        WITH RECURSIVE ChildHierarchy AS (
-        SELECT id, email, phonenumber, linked_id, linkprecedence
-        FROM "Contact"
-        WHERE id = ${id}
-
-        UNION ALL
-
-        SELECT c.id, c.email, c.phonenumber, c.linked_id, c.linkprecedence
-        FROM "Contact" c
-        INNER JOIN ChildHierarchy ch ON c.linked_id = ch.id
-        )
-        SELECT
-        array_remove(array_agg(DISTINCT email), null) AS emails,
-        array_remove(array_agg(DISTINCT phonenumber), null) AS phoneNumbers,
-        MAX(CASE WHEN linkprecedence = 'PRIMARY' THEN id END) AS primaryContactId,
-        array_remove(array_agg(CASE WHEN linkprecedence = 'SECONDARY' THEN id END), null) AS secondaryContactIds
-        FROM ChildHierarchy;
-    `;
-
-    return result[0];
-  };
-
 
 
 export const contactCreation = asyncWrapper(
     async(_req: Request, _res: Response, _next: NextFunction) => {
         try{
+            let linkedid : number | null = null;
             const {email, phoneNumber} = _req.body;
             if(!email || !phoneNumber){
                 throw _next(CustomError.BadRequestError("Enter email and phoneNumber both"));
             }
-            const contactId = await findLinkedContact(email, phoneNumber);
-            // console.log(contactId);
-            const root = await rootRecursive(contactId);
-            // console.log(root);
-            const rootId = root[0].id;
-            // console.log(rootId);
-            const contact = await childRecursive(rootId);
-            console.log({contact});
+            const alreadyExist = await prisma.contact.findMany({ where : {AND : [{email: email}, {phonenumber: phoneNumber}] }});
+            if(alreadyExist.length > 0) throw _next(CustomError.BadRequestError(" This contact already exist in the database "));
 
-            _res.status(StatusCodes.OK).json(httpResponse(true, "Identified Contacts", {contact}));
+            const contactId = await findLinkedContact(email, phoneNumber);
+            if(contactId == undefined){
+                return _next(CustomError.BadRequestError("contactId id Undefined"));
+            }
+
+            const secondaryCons = await getSecondaryContacts(contactId.linkedid ?? 0);
+            const root = await rootRecursive();
+            const ids: string[] = root.flatMap(result => result.ids);
+            const contact = await childRecursive(ids);
+
+            _res.status(StatusCodes.OK).json(httpResponse(true, "Identified Contacts", {contact, secondaryCons}));
         }
         catch(error){
-            console.log("Error", error);
             throw _next(CustomError.InternalServerError("Internal server error"));
         }
     }

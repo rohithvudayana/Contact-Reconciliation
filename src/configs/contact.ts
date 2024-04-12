@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { LinkPrecedence, PrismaClient } from "@prisma/client";
 
 export const prisma = new PrismaClient();
 interface Contact{
@@ -13,13 +13,13 @@ interface Contact{
 }
 export default Contact;
 
-// interface data{
-//     email?: string,
-//     phoneNumber?: number,
-//     link_precedence?: string,
-//     linked_id?: number,
-//     id?: number
-// }
+interface data{
+    email?: string,
+    phonenumber?: number,
+    linkprecedence?: string,
+    linked_id?: number,
+    id?: number
+}
 
 
 async function createContact(data : any) {
@@ -33,8 +33,8 @@ async function updateContact(data: any) {
       where: { id: data.id },
       data: {
         linkedid: data.linked_id,
-        linkprecedence: data.linkPrecedence,
-        updatedat: new Date(), // Assuming updatedAt is a field in your Prisma model
+        linkprecedence: LinkPrecedence.SECONDARY,
+        updatedat: new Date(),
       },
     });
     return contact;
