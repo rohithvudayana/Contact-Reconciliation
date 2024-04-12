@@ -3,9 +3,9 @@ import * as CustomError from "../errors";
 import asyncWrapper from "../helpers/asyncWrapper";
 import { StatusCodes } from "http-status-codes";
 import { httpResponse } from "../helpers";
-import { childRecursive, getSecondaryContacts, rootRecursive } from "../configs/queries";
+import { childRecursive, getSecondaryContacts, rootRecursive } from "../queries/queries";
 import { PrismaClient } from '@prisma/client';
-import { findLinkedContact } from "../configs/queries";
+import { findLinkedContact } from "../queries/queries";
 
 export const prisma = new PrismaClient();
 
